@@ -11,17 +11,28 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 
+private const val TAG = "ZERO"
+
+/**
+ * Always-on ears. Speech is IGNORED unless it contains the wake word ("زيرو" / "zero").
+ * "زيرو" alone -> answers "تفضل" and treats the next sentence as the command.
+ * Exactly one listen -> handle -> speak -> listen chain runs at a time.
+ */
 class ZeroListener : Service() {
 
     companion object {
         private const val CHANNEL = "zero_listener"
         private const val ACTION_STOP = "ai.zero.STOP_LISTENING"
+        private const val WAKE_WINDOW_MS = 10_000L
     }
 
     private val main = Handler(Looper.getMainLooper())
     private var voice: Voice? = null
     private var active = false
+    private var awakeUntil = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -36,6 +47,7 @@ class ZeroListener : Service() {
 
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
             != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "RECORD_AUDIO not granted, stopping")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -44,7 +56,7 @@ class ZeroListener : Service() {
 
         val notification = Notification.Builder(this, CHANNEL)
             .setContentTitle("ZERO")
-            .setContentText("المساعد الصوتي يعمل")
+            .setContentText("المساعد الصوتي يعمل — قل: زيرو")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setOngoing(true)
             .addAction(
@@ -58,55 +70,63 @@ class ZeroListener : Service() {
             )
             .build()
 
-        if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(
-                10,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
-        } else {
-            startForeground(10, notification)
-        }
+        startForeground(10, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
 
-        active = true
-        listenAgain()
+        if (!active) {          // never start a second listening chain
+            active = true
+            startListen()
+        }
         return START_NOT_STICKY
     }
 
-    private fun listenAgain() {
+    private fun startListen() {
         if (!active) return
-
         voice?.listen(
-            onText = { text ->
-                if (!active) return@listen
+            onText = { raw -> if (active) onHeard(raw) },
+            onFail = { listenAgain(800) }
+        )
+    }
 
-                Zero.handle(this, text) { reply ->
-                    main.post {
-                        if (active) {
-                            voice?.speak(reply)
-                            main.postDelayed({ listenAgain() }, 1200)
-                        }
-                    }
-                }
-            },
-            onFail = {
-                if (active) {
-                    main.postDelayed({ listenAgain() }, 1500)
-                }
+    private fun listenAgain(delayMs: Long = 300) {
+        if (!active) return
+        main.postDelayed({ if (active) startListen() }, delayMs)
+    }
+
+    private fun onHeard(raw: String) {
+        val now = SystemClock.elapsedRealtime()
+        val afterWake = Text.stripWake(raw)
+
+        val command = when {
+            afterWake != null -> afterWake
+            now < awakeUntil -> raw
+            else -> {
+                Log.d(TAG, "ignored (no wake word): $raw")
+                listenAgain()
+                return
+            }
+        }
+
+        if (command.isBlank()) {                 // only the wake word was said
+            awakeUntil = now + WAKE_WINDOW_MS
+            voice?.speak("تفضل") { listenAgain() }
+            return
+        }
+
+        awakeUntil = 0L
+        Zero.handle(
+            this, command,
+            onInterim = { voice?.speak(it) },
+            onFinal = { reply ->
+                if (active) voice?.speak(reply) { listenAgain() }
             }
         )
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(
-                CHANNEL,
-                "ZERO Voice Assistant",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(channel)
-        }
+        val channel = NotificationChannel(
+            CHANNEL, "ZERO Voice Assistant", NotificationManager.IMPORTANCE_LOW
+        )
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun stopListening() {
@@ -120,7 +140,7 @@ class ZeroListener : Service() {
     override fun onDestroy() {
         active = false
         main.removeCallbacksAndMessages(null)
-        voice?.stop()
+        voice?.shutdown()
         voice = null
         super.onDestroy()
     }

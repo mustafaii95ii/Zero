@@ -2,12 +2,15 @@ package ai.zero
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.graphics.Bitmap
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
+import android.accessibilityservice.GestureDescription
+import android.graphics.Path
+import android.graphics.Rect
+import android.os.Bundle
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+
+private const val TAG = "ZERO"
 
 class ZeroAccessibility : AccessibilityService() {
 
@@ -17,13 +20,17 @@ class ZeroAccessibility : AccessibilityService() {
             private set
     }
 
+    /** Nodes as numbered by the last dump(); click(index) refers to THIS list. */
+    @Volatile
+    private var snapshot: List<AccessibilityNodeInfo> = emptyList()
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         inst = this
         serviceInfo = serviceInfo.apply {
-            flags = flags or
-                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }
+        Log.d(TAG, "accessibility connected")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
@@ -39,21 +46,18 @@ class ZeroAccessibility : AccessibilityService() {
     fun recents() = performGlobalAction(GLOBAL_ACTION_RECENTS)
     fun notifications() = performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS)
     fun quickSettings() = performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+    fun lock() = performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+    fun screenshot() = performGlobalAction(GLOBAL_ACTION_TAKE_SCREENSHOT)
 
-    fun lock(): Boolean {
-        return if (Build.VERSION.SDK_INT >= 28)
-            performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
-        else false
-    }
+    /** Old indexes are meaningless once the screen changes. */
+    fun invalidate() { snapshot = emptyList() }
 
     private fun nodes(): List<AccessibilityNodeInfo> {
         val result = mutableListOf<AccessibilityNodeInfo>()
         fun walk(node: AccessibilityNodeInfo?) {
             if (node == null) return
             result.add(node)
-            for (i in 0 until node.childCount) {
-                walk(node.getChild(i))
-            }
+            for (i in 0 until node.childCount) walk(node.getChild(i))
         }
         walk(rootInActiveWindow)
         return result
@@ -62,76 +66,77 @@ class ZeroAccessibility : AccessibilityService() {
     fun dump(): String {
         val all = nodes()
         if (all.isEmpty()) return "لا أستطيع قراءة الشاشة"
+        snapshot = all
+        val pkg = rootInActiveWindow?.packageName
 
-        return all.mapIndexedNotNull { index, node ->
+        val lines = all.mapIndexedNotNull { index, n ->
+            if (!n.isVisibleToUser) return@mapIndexedNotNull null
             val label = listOf(
-                node.text?.toString(),
-                node.contentDescription?.toString()
+                n.text?.toString(),
+                n.contentDescription?.toString(),
+                n.hintText?.toString()
             ).firstOrNull { !it.isNullOrBlank() }
+            val tags = buildString {
+                if (n.isEditable) append("[edit]")
+                if (n.isClickable) append("[click]")
+                if (n.isScrollable) append("[scroll]")
+            }
+            if (label.isNullOrBlank() && !n.isEditable) null
+            else "$index$tags: ${label?.take(80) ?: ""}"
+        }.take(100)
 
-            if (label.isNullOrBlank()) null
-            else "$index: $label"
-        }.take(100).joinToString("\n")
-            .ifBlank { "لا توجد عناصر نصية ظاهرة" }
+        if (lines.isEmpty()) return "لا توجد عناصر نصية ظاهرة"
+        return "app: $pkg\n" + lines.joinToString("\n")
     }
 
     fun click(index: Int): Boolean {
-        val node = nodes().getOrNull(index) ?: return false
-        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        val node = snapshot.getOrNull(index)
+        if (node == null) {
+            Log.w(TAG, "click($index): no snapshot / bad index")
+            return false
+        }
+        node.refresh()
+        // Labels are usually on non-clickable children: climb to a clickable parent.
+        var target: AccessibilityNodeInfo? = node
+        var hops = 0
+        while (target != null && !target.isClickable && hops < 6) {
+            target = target.parent
+            hops++
+        }
+        if (target != null && target.isClickable &&
+            target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        // Fallback: real tap at the element's center.
+        return tap(node)
+    }
+
+    private fun tap(node: AccessibilityNodeInfo): Boolean {
+        val r = Rect()
+        node.getBoundsInScreen(r)
+        if (r.width() <= 0 || r.height() <= 0) return false
+        val path = Path().apply { moveTo(r.exactCenterX(), r.exactCenterY()) }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 60))
+            .build()
+        return dispatchGesture(gesture, null, null)
     }
 
     fun type(text: String): Boolean {
-        val node = rootInActiveWindow ?: return false
-        val target = findFocused(node) ?: return false
-
-        return target.performAction(
-            AccessibilityNodeInfo.ACTION_SET_TEXT,
-            android.os.Bundle().apply {
-                putCharSequence(
-                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                    text
-                )
-            }
-        )
-    }
-
-    private fun findFocused(
-        node: AccessibilityNodeInfo
-    ): AccessibilityNodeInfo? {
-        if (node.isFocused && node.isEditable) return node
-
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            val found = findFocused(child)
-            if (found != null) return found
+        val all = nodes()
+        val target = all.firstOrNull { it.isEditable && it.isFocused }
+            ?: all.firstOrNull { it.isEditable && it.isVisibleToUser }
+            ?: return false
+        target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        val args = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
-        return null
+        return target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
     fun scroll(down: Boolean): Boolean {
-        val node = rootInActiveWindow ?: return false
-        val action = if (down)
-            AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-        else
-            AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-
-        return node.performAction(action)
-    }
-
-    fun screenshot(): Boolean {
-        if (Build.VERSION.SDK_INT < 30) return false
-
-        takeScreenshot(
-            android.view.Display.DEFAULT_DISPLAY,
-            mainExecutor,
-            object : TakeScreenshotCallback {
-                override fun onSuccess(result: ScreenshotResult) {
-                    result.hardwareBuffer.close()
-                }
-
-                override fun onFailure(errorCode: Int) {}
-            }
+        val node = nodes().firstOrNull { it.isScrollable && it.isVisibleToUser } ?: return false
+        return node.performAction(
+            if (down) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
         )
-        return true
     }
 }

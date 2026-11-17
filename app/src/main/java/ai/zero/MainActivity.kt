@@ -14,7 +14,7 @@ class MainActivity : Activity() {
         super.onCreate(s)
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO,
             Manifest.permission.POST_NOTIFICATIONS), 1)
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 80, 40, 40) }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 330, 40, 160) }
         fun btn(t: String, f: () -> Unit) = col.addView(Button(this).apply { text = t; setOnClickListener { f() } })
         col.addView(TextView(this).apply { text = "Zero — زيرو"; textSize = 28f })
         val key = EditText(this).apply { hint = "Anthropic API key"; setText(Prefs.apiKey(context)) }

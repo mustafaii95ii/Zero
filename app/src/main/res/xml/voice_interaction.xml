@@ -1,0 +1,5 @@
+<voice-interaction-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="ai.zero.ZeroSessionService"
+    android:supportsAssist="true"
+    android:supportsLaunchFromKeyguard="false" />

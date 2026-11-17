@@ -82,11 +82,11 @@ class Voice(private val ctx: Context) {
                 r.setRecognitionListener(object : RecognitionListener {
                     override fun onResults(b: Bundle?) {
                         val t = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-                        Log.d(TAG, "heard: $t")
+                        Log.d(TAG, "heard: $t"); android.widget.Toast.makeText(ctx, "سمعت: $t", android.widget.Toast.LENGTH_LONG).show()
                         if (t.isNullOrBlank()) onFail() else onText(t)
                     }
                     override fun onError(e: Int) {
-                        Log.d(TAG, "STT error $e (offline=$offline)")
+                        Log.d(TAG, "STT error $e (offline=$offline)"); android.widget.Toast.makeText(ctx, "STT error $e", android.widget.Toast.LENGTH_SHORT).show()
                         val noLang = e == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ||
                             e == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE
                         if (offline && noLang) listen(lang, false, onText, onFail) else onFail()

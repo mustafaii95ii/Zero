@@ -33,6 +33,8 @@ class ZeroListener : Service() {
     private var voice: Voice? = null
     private var active = false
     private var awakeUntil = 0L
+    private var wake: WakeWord? = null
+    private var vosk = false   // true while the offline wake-word engine is in charge
 
     override fun onCreate() {
         super.onCreate()
@@ -74,11 +76,67 @@ class ZeroListener : Service() {
 
         if (!active) {          // never start a second listening chain
             active = true
-            startListen()
+            beginListening()
         }
         return START_NOT_STICKY
     }
 
+    // ---- Wake-word mode (Vosk): the mic stays open quietly; the system speech
+    //      recognizer opens ONLY after "zero" was heard (no more open/close beeps). ----
+    private fun beginListening() {
+        val w = WakeWord(this) { onWake() }
+        wake = w
+        w.load(
+            onReady = {
+                if (active) {
+                    vosk = w.start()
+                    Log.d(TAG, "wake-word engine started: $vosk")
+                    if (!vosk) startListen()
+                }
+            },
+            onError = { msg ->
+                Log.e(TAG, "wake-word engine unavailable ($msg), falling back to STT loop")
+                vosk = false
+                if (active) startListen()
+            }
+        )
+    }
+
+    private fun onWake() {
+        if (!active) return
+        Log.d(TAG, "wake word detected")
+        voice?.speak(Say.p(this, "تفضل", "Yes, sir?")) { listenForCommand() }
+    }
+
+    private fun listenForCommand() {
+        if (!active) return
+        voice?.listen(
+            onText = { raw -> if (active) runCommand(Text.stripWake(raw) ?: raw) },
+            onFail = { resumeWake() }
+        )
+    }
+
+    private fun runCommand(command: String) {
+        if (command.isBlank()) { resumeWake(); return }
+        Zero.handle(
+            this, command,
+            onInterim = { voice?.speak(it) },
+            onFinal = { reply -> if (active) voice?.speak(reply) { resumeWake() } }
+        )
+    }
+
+    private fun resumeWake() {
+        if (!active) return
+        main.postDelayed({
+            if (active && wake?.start() != true) {
+                Log.e(TAG, "wake word restart failed, falling back to STT loop")
+                vosk = false
+                startListen()
+            }
+        }, 300)
+    }
+
+    // ---- Fallback (no wake-word engine): old loop, ignores speech without "zero" ----
     private fun startListen() {
         if (!active) return
         voice?.listen(
@@ -132,6 +190,7 @@ class ZeroListener : Service() {
     private fun stopListening() {
         active = false
         main.removeCallbacksAndMessages(null)
+        wake?.release(); wake = null
         voice?.stop()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -140,6 +199,7 @@ class ZeroListener : Service() {
     override fun onDestroy() {
         active = false
         main.removeCallbacksAndMessages(null)
+        wake?.release(); wake = null
         voice?.shutdown()
         voice = null
         super.onDestroy()

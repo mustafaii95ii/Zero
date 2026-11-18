@@ -55,10 +55,19 @@ class Voice(private val ctx: Context) {
             return
         }
         val isAr = text.any { it in '\u0600'..'\u06FF' }
-        val res = tts?.setLanguage(if (isAr) Locale("ar") else Locale.US)
-        if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
-            Log.w(TAG, "TTS language problem ($res) for: $text")
+        val code = if (isAr) "ar" else "en"
+        val saved = Prefs.voiceName(ctx, code)
+        val chosen = if (saved.isNotEmpty()) tts?.voices?.firstOrNull { it.name == saved } else null
+        if (chosen != null) {
+            tts?.setVoice(chosen)
+        } else {
+            val res = tts?.setLanguage(if (isAr) Locale("ar") else Locale.UK)
+            if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.w(TAG, "TTS language problem ($res) for: $text")
+            }
         }
+        tts?.setPitch(Prefs.pitch(ctx))
+        tts?.setSpeechRate(Prefs.rate(ctx))
         onSpeakDone = done
         main.removeCallbacks(watchdog)
         main.postDelayed(watchdog, 4000L + text.length * 100L)
@@ -106,6 +115,36 @@ class Voice(private val ctx: Context) {
                 })
             }
         }
+    }
+
+    /** Cycles to the next installed voice for a language ("en" or "ar"), saves it, plays a sample. */
+    fun nextVoice(code: String, report: (String) -> Unit) {
+        if (!ttsReady) { report("الصوت غير جاهز، جرب بعد ثانية"); return }
+        val all = (tts?.voices ?: emptySet<android.speech.tts.Voice>())
+            .filter { it.locale.language == code && !it.features.contains("notInstalled") }
+            .sortedWith(compareBy<android.speech.tts.Voice>({ it.locale.toLanguageTag() != "en-GB" }, { it.name }))
+        if (all.isEmpty()) { report("ما في أصوات مثبّتة لهذه اللغة"); return }
+        val idx = all.indexOfFirst { it.name == Prefs.voiceName(ctx, code) }
+        val pos = (idx + 1) % all.size
+        val next = all[pos]
+        Prefs.setVoiceName(ctx, code, next.name)
+        report("${next.name} (${next.locale.toLanguageTag()}) ${pos + 1}/${all.size}")
+        speak(if (code == "ar") "تحت أمرك" else "At your service.")
+    }
+
+    /** Cycles pitch/speed presets, plays a sample. */
+    fun nextTuning(report: (String) -> Unit) {
+        val presets = listOf(
+            Triple("عميق وهادئ", 0.75f, 0.9f),
+            Triple("جارفس", 0.85f, 0.95f),
+            Triple("عادي", 1.0f, 1.0f),
+            Triple("حاد", 1.15f, 1.05f)
+        )
+        val cur = presets.indexOfFirst { it.second == Prefs.pitch(ctx) }
+        val n = presets[(cur + 1) % presets.size]
+        Prefs.setTuning(ctx, n.second, n.third)
+        report(n.first)
+        speak("At your service.")
     }
 
     fun stop() { main.post { sr?.destroy(); sr = null } }

@@ -10,8 +10,11 @@ import android.view.ViewGroup
 import android.widget.*
 
 class MainActivity : Activity() {
+    private var voice: Voice? = null
+
     override fun onCreate(s: Bundle?) {
         super.onCreate(s)
+        voice = Voice(this)
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO,
             Manifest.permission.POST_NOTIFICATIONS), 1)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 330, 40, 160) }
@@ -32,10 +35,25 @@ class MainActivity : Activity() {
                 startForegroundService(Intent(this, ZeroListener::class.java))
             }
         }
+        btn("صوت زيرو الإنجليزي (التالي)") {
+            voice?.nextVoice("en") { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
+        }
+        btn("صوت زيرو العربي (التالي)") {
+            voice?.nextVoice("ar") { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
+        }
+        btn("نبرة الصوت (عميق / جارفس / عادي / حاد)") {
+            voice?.nextTuning { Toast.makeText(this, it, Toast.LENGTH_SHORT).show() }
+        }
         btn("اللغة: عربي / English") {
             Prefs.setLang(this, if (Prefs.lang(this).startsWith("ar")) "en-US" else "ar-SA")
             Toast.makeText(this, Prefs.lang(this), Toast.LENGTH_SHORT).show()
         }
         setContentView(ScrollView(this).apply { addView(col, ViewGroup.LayoutParams(-1, -2)) })
+    }
+
+    override fun onDestroy() {
+        voice?.shutdown()
+        voice = null
+        super.onDestroy()
     }
 }

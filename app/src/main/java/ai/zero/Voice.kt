@@ -86,7 +86,7 @@ class Voice(private val ctx: Context) {
                         if (t.isNullOrBlank()) onFail() else onText(t)
                     }
                     override fun onError(e: Int) {
-                        Log.d(TAG, "STT error $e (offline=$offline)"); android.widget.Toast.makeText(ctx, "STT error $e", android.widget.Toast.LENGTH_SHORT).show()
+                        Log.d(TAG, "STT error $e (offline=$offline)")
                         val noLang = e == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ||
                             e == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE
                         if (offline && noLang) listen(lang, false, onText, onFail) else onFail()

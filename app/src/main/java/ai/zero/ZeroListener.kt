@@ -108,7 +108,7 @@ class ZeroListener : Service() {
 
         if (command.isBlank()) {                 // only the wake word was said
             awakeUntil = now + WAKE_WINDOW_MS
-            voice?.speak("تفضل") { listenAgain() }
+            voice?.speak(Say.p(this, "تفضل", "Yes, sir?")) { listenAgain() }
             return
         }
 

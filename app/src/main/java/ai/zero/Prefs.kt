@@ -13,6 +13,8 @@ object Prefs {
     fun voiceName(c: Context, code: String) = p(c).getString("voice_$code", "") ?: ""
     fun setVoiceName(c: Context, code: String, name: String) =
         p(c).edit().putString("voice_$code", name).apply()
+    fun replyEn(c: Context) = p(c).getBoolean("reply_en", true)
+    fun setReplyEn(c: Context, v: Boolean) = p(c).edit().putBoolean("reply_en", v).apply()
     fun pitch(c: Context) = p(c).getFloat("pitch", 0.85f)
     fun rate(c: Context) = p(c).getFloat("rate", 0.95f)
     fun setTuning(c: Context, pitch: Float, rate: Float) =

@@ -19,7 +19,7 @@ object Zero {
         val local = try {
             Router.handle(c, text)
         } catch (e: Exception) {
-            Log.e(TAG, "router failed", e); "صار خطأ"
+            Log.e(TAG, "router failed", e); Say.p(c, "صار خطأ", "Something went wrong, sir.")
         }
         if (local != null) {
             Log.d(TAG, "router: '$text' -> $local")
@@ -27,12 +27,12 @@ object Zero {
             return
         }
 
-        main.post { onInterim("لحظة") }
+        main.post { onInterim(Say.p(c, "لحظة", "One moment, sir.")) }
         thread {
             val result = try {
                 Brain(c).run(text)
             } catch (e: Exception) {
-                Log.e(TAG, "brain failed", e); "صار خطأ"
+                Log.e(TAG, "brain failed", e); Say.p(c, "صار خطأ", "Something went wrong, sir.")
             }
             Log.d(TAG, "brain: '$text' -> $result")
             main.post { onFinal(result) }

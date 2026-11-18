@@ -11,8 +11,13 @@ private const val TAG = "ZERO"
 
 /** Tier 2: agent loop (see screen -> think -> act) via Claude tool use. */
 class Brain(private val c: Context) {
+    private val langLine = if (Prefs.replyEn(c))
+        "Always reply in English, in a calm, polished, butler-like tone, very short. Address the user as 'sir' (for example: 'Done, sir.')."
+    else
+        "Reply in the user's language (Arabic or English), very short."
+
     private val sys = """You are Zero, a fast voice assistant that controls an Android phone.
-Reply in the user's language (Arabic or English), very short.
+$langLine
 Use read_screen to see the UI; tags [click]/[edit]/[scroll] show what each element is.
 Element indexes are valid ONLY for the latest read_screen: after any action the screen changes, so call read_screen again before the next click.
 Finish with done(message). Never do payments or delete data without asking."""
@@ -34,15 +39,15 @@ Finish with done(message). Never do payments or delete data without asking."""
     /** Blocking — call from a background thread. */
     fun run(task: String): String {
         val key = Prefs.apiKey(c)
-        if (key.isBlank()) return "ضيف مفتاح الـ API من إعدادات زيرو"
+        if (key.isBlank()) return Say.p(c, "ضيف مفتاح الـ API من إعدادات زيرو", "Please add an API key in my settings, sir.")
         val msgs = JSONArray().put(JSONObject().put("role", "user").put("content", task))
         repeat(12) { step ->
             Log.d(TAG, "brain step $step")
-            val res = call(key, msgs) ?: return "ما في اتصال"
+            val res = call(key, msgs) ?: return Say.p(c, "ما في اتصال", "I can't reach the network, sir.")
             res.optJSONObject("error")?.let { return apiError(it) }
             val content = res.optJSONArray("content") ?: run {
                 Log.e(TAG, "no content in response: $res")
-                return "صار خطأ"
+                return Say.p(c, "صار خطأ", "Something went wrong, sir.")
             }
             msgs.put(JSONObject().put("role", "assistant").put("content", content))
             val results = JSONArray()
@@ -51,7 +56,7 @@ Finish with done(message). Never do payments or delete data without asking."""
                 if (b.optString("type") != "tool_use") continue
                 val name = b.getString("name")
                 val inp = b.getJSONObject("input")
-                if (name == "done") return inp.optString("message", "تم")
+                if (name == "done") return inp.optString("message", Say.p(c, "تم", "Done, sir."))
                 val out = try {
                     exec(name, inp)
                 } catch (e: Exception) {
@@ -67,21 +72,21 @@ Finish with done(message). Never do payments or delete data without asking."""
                     val b = content.getJSONObject(i)
                     if (b.optString("type") == "text") return b.getString("text")
                 }
-                return "تم"
+                return Say.p(c, "تم", "Done, sir.")
             }
             msgs.put(JSONObject().put("role", "user").put("content", results))
         }
-        return "ما قدرت أكمل المهمة"
+        return Say.p(c, "ما قدرت أكمل المهمة", "I couldn't complete the task, sir.")
     }
 
     private fun apiError(e: JSONObject): String {
         Log.e(TAG, "API error: $e")
         return when (e.optString("type")) {
-            "authentication_error" -> "مفتاح الـ API غير صحيح"
-            "not_found_error" -> "اسم النموذج غير صحيح"
-            "rate_limit_error" -> "وصلت الحد المسموح، جرب بعد قليل"
-            "overloaded_error" -> "الخدمة مشغولة، جرب بعد قليل"
-            else -> "خطأ من الخدمة: " + e.optString("message").take(80)
+            "authentication_error" -> Say.p(c, "مفتاح الـ API غير صحيح", "The API key is invalid, sir.")
+            "not_found_error" -> Say.p(c, "اسم النموذج غير صحيح", "The model name is invalid, sir.")
+            "rate_limit_error" -> Say.p(c, "وصلت الحد المسموح، جرب بعد قليل", "Rate limit reached, sir. Please try again shortly.")
+            "overloaded_error" -> Say.p(c, "الخدمة مشغولة، جرب بعد قليل", "The service is busy, sir. Please try again shortly.")
+            else -> Say.p(c, "خطأ من الخدمة: ", "Service error, sir: ") + e.optString("message").take(80)
         }
     }
 

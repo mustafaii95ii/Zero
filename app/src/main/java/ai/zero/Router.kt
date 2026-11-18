@@ -40,8 +40,9 @@ object Router {
         val short = t.split(" ").size <= 4
         fun has(vararg k: String) = short && k.any { t.contains(Text.norm(it)) }
         fun act(f: (ZeroAccessibility) -> Boolean): String =
-            if (a == null) "فعّل خدمة إمكانية الوصول أولاً"
-            else if (f(a)) "تم" else "ما قدرت أنفذ الأمر"
+            if (a == null) Say.p(c, "فعّل خدمة إمكانية الوصول أولاً", "Please enable the accessibility service, sir.")
+            else if (f(a)) Say.p(c, "تم", "Done, sir.")
+            else Say.p(c, "ما قدرت أنفذ الأمر", "I couldn't do that, sir.")
 
         when {
             has("رجوع", "ارجع", "go back") -> return act { it.back() }
@@ -53,8 +54,8 @@ object Router {
             has("لقطة شاشة", "screenshot") -> return act { it.screenshot() }
             has("شغل الفلاش", "افتح الفلاش", "flashlight on") -> return flash(c, true)
             has("اطفي الفلاش", "اطفئ الفلاش", "flashlight off") -> return flash(c, false)
-            has("ارفع الصوت", "volume up") -> { vol(c, true); return "تم" }
-            has("اخفض الصوت", "volume down") -> { vol(c, false); return "تم" }
+            has("ارفع الصوت", "volume up") -> { vol(c, true); return Say.p(c, "تم", "Done, sir.") }
+            has("اخفض الصوت", "volume down") -> { vol(c, false); return Say.p(c, "تم", "Done, sir.") }
         }
         val m = Regex("^(?:افتح|شغل|open|launch)\\s+(.+)$").find(t)
         if (m != null) return openApp(c, m.groupValues[1].trim())
@@ -74,17 +75,17 @@ object Router {
         val labeled = apps.map { it to Text.norm(it.loadLabel(pm).toString()) }
         val hit = labeled.firstOrNull { it.second in cands }
             ?: labeled.firstOrNull { (_, l) -> cands.any { it.length >= 3 && l.contains(it) } }
-            ?: return "ما لقيت تطبيق $spoken"
+            ?: return Say.p(c, "ما لقيت تطبيق $spoken", "I couldn't find $spoken, sir.")
 
         val pkg = hit.first.activityInfo.packageName
-        val i = pm.getLaunchIntentForPackage(pkg) ?: return "ما قدرت أفتحه"
+        val i = pm.getLaunchIntentForPackage(pkg) ?: return Say.p(c, "ما قدرت أفتحه", "I couldn't open it, sir.")
         return try {
             c.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             Log.d(TAG, "opened $pkg for '$spoken'")
-            "فتحت ${hit.first.loadLabel(pm)}"
+            Say.p(c, "فتحت ${hit.first.loadLabel(pm)}", "Opening ${hit.first.loadLabel(pm)}, sir.")
         } catch (e: Exception) {
             Log.e(TAG, "launch failed for $pkg", e)
-            "ما قدرت أفتح التطبيق"
+            Say.p(c, "ما قدرت أفتح التطبيق", "I couldn't launch the app, sir.")
         }
     }
 
@@ -94,12 +95,12 @@ object Router {
             val ch = cm.getCameraCharacteristics(it)
             ch.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true &&
                 ch.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
-        } ?: return "ما لقيت فلاش"
+        } ?: return Say.p(c, "ما لقيت فلاش", "No flashlight found, sir.")
         cm.setTorchMode(id, on)
-        "تم"
+        Say.p(c, "تم", "Done, sir.")
     } catch (e: Exception) {
         Log.e(TAG, "flash failed", e)
-        "ما قدرت أشغل الفلاش"
+        Say.p(c, "ما قدرت أشغل الفلاش", "I couldn't toggle the flashlight, sir.")
     }
 
     private fun vol(c: Context, up: Boolean) {

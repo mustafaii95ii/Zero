@@ -44,6 +44,11 @@ class MainActivity : Activity() {
         btn("نبرة الصوت (عميق / جارفس / عادي / حاد)") {
             voice?.nextTuning { Toast.makeText(this, it, Toast.LENGTH_SHORT).show() }
         }
+        btn("ردود زيرو: English / عربي") {
+            val en = !Prefs.replyEn(this)
+            Prefs.setReplyEn(this, en)
+            Toast.makeText(this, if (en) "English replies" else "ردود عربية", Toast.LENGTH_SHORT).show()
+        }
         btn("اللغة: عربي / English") {
             Prefs.setLang(this, if (Prefs.lang(this).startsWith("ar")) "en-US" else "ar-SA")
             Toast.makeText(this, Prefs.lang(this), Toast.LENGTH_SHORT).show()

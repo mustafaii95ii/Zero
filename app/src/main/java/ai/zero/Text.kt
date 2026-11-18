@@ -18,6 +18,15 @@ object Text {
         .replace(spaces, " ")
         .trim()
 
+    private val polite = listOf("لو سمحت", "من فضلك", "رجاء", "please", "can you", "could you", "would you")
+
+    /** Removes polite filler so "please open camera" matches like "open camera". */
+    fun stripPolite(s: String): String {
+        var r = s
+        for (p in polite) r = r.replace(p, " ")
+        return r.replace(spaces, " ").trim()
+    }
+
     /** Returns the command with the wake word removed, or null if no wake word was said. */
     fun stripWake(raw: String): String? {
         val tokens = raw.trim().split(spaces).filter { it.isNotBlank() }

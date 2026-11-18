@@ -120,6 +120,29 @@ class ZeroAccessibility : AccessibilityService() {
         return dispatchGesture(gesture, null, null)
     }
 
+    private fun labelOf(n: AccessibilityNodeInfo): String = Text.norm(
+        listOf(n.text?.toString(), n.contentDescription?.toString())
+            .firstOrNull { !it.isNullOrBlank() } ?: ""
+    )
+
+    /** Taps the visible element whose text/description matches [query] (no AI needed). */
+    fun clickText(query: String): Boolean {
+        val q = Text.norm(query).removePrefix("ال")
+        if (q.isBlank()) return false
+        val all = nodes()
+        val match = all.firstOrNull { it.isVisibleToUser && labelOf(it).removePrefix("ال") == q }
+            ?: all.firstOrNull { it.isVisibleToUser && labelOf(it).contains(q) }
+            ?: return false
+        snapshot = all
+        return click(all.indexOf(match))
+    }
+
+    /** Visible on-screen texts, for reading the screen aloud. */
+    fun readTexts(): String = nodes()
+        .filter { it.isVisibleToUser }
+        .mapNotNull { it.text?.toString()?.takeIf { s -> s.isNotBlank() } }
+        .distinct().take(8).joinToString(". ")
+
     fun type(text: String): Boolean {
         val all = nodes()
         val target = all.firstOrNull { it.isEditable && it.isFocused }

@@ -27,6 +27,12 @@ object Zero {
             return
         }
 
+        if (Prefs.apiKey(c).isBlank()) {   // fully local mode: no AI key, no network
+            Log.d(TAG, "no local match for '$text' and no API key")
+            main.post { onFinal(Say.p(c, "ما فهمت الأمر", "I didn't understand that, sir.")) }
+            return
+        }
+
         main.post { onInterim(Say.p(c, "لحظة", "One moment, sir.")) }
         thread {
             val result = try {

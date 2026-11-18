@@ -33,7 +33,7 @@ object Router {
     private val aliasMap by lazy { aliases.mapKeys { Text.norm(it.key) } }
 
     fun handle(c: Context, raw: String): String? {
-        val t = Text.norm(raw)
+        val t = Text.stripPolite(Text.norm(raw))
         if (t.isBlank()) return null
         val a = ZeroAccessibility.inst
         // Global commands only when the sentence is short; longer sentences go to Brain.
@@ -54,9 +54,19 @@ object Router {
             has("لقطة شاشة", "screenshot") -> return act { it.screenshot() }
             has("شغل الفلاش", "افتح الفلاش", "flashlight on") -> return flash(c, true)
             has("اطفي الفلاش", "اطفئ الفلاش", "flashlight off") -> return flash(c, false)
+            has("مرر لتحت", "مرر للاسفل", "scroll down") -> return act { it.scroll(true) }
+            has("مرر لفوق", "مرر للاعلى", "scroll up") -> return act { it.scroll(false) }
             has("ارفع الصوت", "volume up") -> { vol(c, true); return Say.p(c, "تم", "Done, sir.") }
             has("اخفض الصوت", "volume down") -> { vol(c, false); return Say.p(c, "تم", "Done, sir.") }
         }
+        if (has("اقرأ الشاشة", "اقرا الشاشة", "read screen", "read the screen")) {
+            if (a == null) return Say.p(c, "فعّل خدمة إمكانية الوصول أولاً", "Please enable the accessibility service, sir.")
+            return a.readTexts().ifBlank { Say.p(c, "ما في نص ظاهر", "Nothing readable on screen, sir.") }
+        }
+        val tap = Regex("^(?:اضغط على|اضغط|انقر على|انقر|click on|click|tap on|tap)\\s+(.+)$").find(t)
+        if (tap != null) return act { it.clickText(tap.groupValues[1].trim()) }
+        val typ = Regex("^(?:اكتب|type|write)\\s+(.+)$", RegexOption.IGNORE_CASE).find(raw.trim())
+        if (typ != null) return act { it.type(typ.groupValues[1].trim()) }
         val m = Regex("^(?:افتح|شغل|open|launch)\\s+(.+)$").find(t)
         if (m != null) return openApp(c, m.groupValues[1].trim())
         return null

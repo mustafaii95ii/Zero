@@ -88,13 +88,16 @@ class Voice(private val ctx: Context) {
             }
             sr?.destroy()
             sr = SpeechRecognizer.createSpeechRecognizer(ctx).also { r ->
+                fun release() { main.post { if (sr === r) { r.destroy(); sr = null } } }
                 r.setRecognitionListener(object : RecognitionListener {
                     override fun onResults(b: Bundle?) {
+                        release()
                         val t = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
                         Log.d(TAG, "heard: $t"); android.widget.Toast.makeText(ctx, "سمعت: $t", android.widget.Toast.LENGTH_LONG).show()
                         if (t.isNullOrBlank()) onFail() else onText(t)
                     }
                     override fun onError(e: Int) {
+                        release()
                         Log.d(TAG, "STT error $e (offline=$offline)")
                         val noLang = e == SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED ||
                             e == SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE

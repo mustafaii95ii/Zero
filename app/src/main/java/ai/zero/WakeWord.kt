@@ -23,6 +23,8 @@ class WakeWord(private val ctx: Context, private val onWake: () -> Unit) {
     private var service: SpeechService? = null
     @Volatile private var triggered = false
 
+    val isReady: Boolean get() = model != null
+
     /** Copies the bundled model to internal storage (first run only) and loads it. */
     fun load(onReady: () -> Unit, onError: (String) -> Unit) {
         if (model != null) { onReady(); return }
@@ -41,13 +43,19 @@ class WakeWord(private val ctx: Context, private val onWake: () -> Unit) {
             val s = SpeechService(rec, 16000f)
             recognizer = rec
             service = s
-            s.startListening(object : RecognitionListener {
+            val started = s.startListening(object : RecognitionListener {
                 override fun onPartialResult(h: String?) = inspect(h)
                 override fun onResult(h: String?) = inspect(h)
                 override fun onFinalResult(h: String?) {}
                 override fun onError(e: Exception?) { Log.e(TAG, "wake-word error", e) }
                 override fun onTimeout() {}
             })
+            if (!started) {
+                Log.e(TAG, "wake-word: microphone busy, could not start recording")
+                stop()
+                return false
+            }
+            Log.d(TAG, "wake-word listening")
             true
         } catch (e: Exception) {
             Log.e(TAG, "wake-word start failed", e)

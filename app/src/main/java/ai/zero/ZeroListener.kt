@@ -26,6 +26,7 @@ class ZeroListener : Service() {
     companion object {
         private const val CHANNEL = "zero_listener"
         private const val ACTION_STOP = "ai.zero.STOP_LISTENING"
+        const val ACTION_WAKE = "ai.zero.WAKE"
         private const val WAKE_WINDOW_MS = 10_000L
     }
 
@@ -34,6 +35,7 @@ class ZeroListener : Service() {
     private var active = false
     private var awakeUntil = 0L
     private var wake: WakeWord? = null
+    private var turnActive = false   // a command turn is in progress (mic belongs to speech recognizer)
     private var vosk = false   // true while the offline wake-word engine is in charge
 
     override fun onCreate() {
@@ -78,6 +80,10 @@ class ZeroListener : Service() {
             active = true
             beginListening()
         }
+        if (intent?.action == ACTION_WAKE) {      // side button / long-press Home (assistant gesture)
+            wake?.stop()
+            main.post { onWake() }
+        }
         return START_NOT_STICKY
     }
 
@@ -88,7 +94,7 @@ class ZeroListener : Service() {
         wake = w
         w.load(
             onReady = {
-                if (active) {
+                if (active && !turnActive) {
                     vosk = w.start()
                     Log.d(TAG, "wake-word engine started: $vosk")
                     if (!vosk) startListen()
@@ -104,6 +110,7 @@ class ZeroListener : Service() {
 
     private fun onWake() {
         if (!active) return
+        turnActive = true
         Log.d(TAG, "wake word detected")
         voice?.speak(Say.p(this, "تفضل", "Yes, sir?")) { listenForCommand() }
     }
@@ -125,15 +132,24 @@ class ZeroListener : Service() {
         )
     }
 
-    private fun resumeWake() {
+    private fun resumeWake(attempt: Int = 0) {
+        turnActive = false
         if (!active) return
+        if (wake?.isReady != true) { listenAgain(); return }   // no engine: old loop
         main.postDelayed({
-            if (active && wake?.start() != true) {
+            if (!active || turnActive) return@postDelayed
+            if (wake?.start() == true) {
+                vosk = true
+                Log.d(TAG, "wake word resumed (attempt $attempt)")
+            } else if (attempt < 8) {
+                Log.w(TAG, "wake word: mic still busy, retrying")
+                resumeWake(attempt + 1)
+            } else {
                 Log.e(TAG, "wake word restart failed, falling back to STT loop")
                 vosk = false
                 startListen()
             }
-        }, 300)
+        }, if (attempt == 0) 500L else 600L)
     }
 
     // ---- Fallback (no wake-word engine): old loop, ignores speech without "zero" ----

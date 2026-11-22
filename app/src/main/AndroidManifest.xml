@@ -15,13 +15,20 @@
             </intent-filter>
         </activity>
         <!-- Real system-level assistant role (Settings > Default apps > Digital assistant) -->
-        <service android:name=".ZeroInteractionService" android:exported="true"
+        <service android:name=".ZeroInteractionService" android:exported="true" android:label="Zero"
             android:permission="android.permission.BIND_VOICE_INTERACTION">
             <meta-data android:name="android.voice_interaction" android:resource="@xml/voice_interaction"/>
             <intent-filter><action android:name="android.service.voice.VoiceInteractionService"/></intent-filter>
         </service>
         <service android:name=".ZeroSessionService" android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION"/>
+        <service android:name=".ZeroRecognitionService" android:exported="true" android:label="Zero Recognizer">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+            <meta-data android:name="android.speech" android:resource="@xml/recognition_service"/>
+        </service>
         <service android:name=".ZeroAccessibility" android:exported="true"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
